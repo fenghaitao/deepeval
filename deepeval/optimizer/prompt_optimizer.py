@@ -131,6 +131,9 @@ class PromptOptimizer:
 
     def _configure_algorithm(self) -> None:
         """Configure the algorithm with scorer, rewriter, and callbacks."""
+        # Set optimizer model on algorithm (required by MIPROV2 and other algorithms)
+        self.algorithm.optimizer_model = self.optimizer_model
+
         self.algorithm.scorer = Scorer(
             model_callback=self.model_callback,
             metrics=self.metrics,

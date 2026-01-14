@@ -514,12 +514,45 @@ def initialize_model(
     """
     Returns a tuple of (initialized DeepEvalBaseLLM, using_native_model boolean)
     """
+    import os
+    
     # If model is natively supported, it should be deemed as using native model
     if is_native_model(model):
         return model, True
     # If model is a DeepEvalBaseLLM but not a native model, we can not assume it is a native model
     if isinstance(model, DeepEvalBaseLLM):
         return model, False
+    
+    # Handle custom model strings: iflow/* and github_copilot/*
+    if isinstance(model, str):
+        if model.startswith("iflow/"):
+            # Convert iflow model to LiteLLM format
+            litellm_model = model.replace("iflow/", "dashscope/")
+            api_key = os.getenv("IFLOW_API_KEY")
+            if not api_key:
+                raise ValueError(
+                    "IFLOW_API_KEY environment variable not set. "
+                    "Please set it with: export IFLOW_API_KEY='your-key'"
+                )
+            return LiteLLMModel(
+                model=litellm_model,
+                api_key=api_key,
+                base_url="https://apis.iflow.cn/v1/"
+            ), True
+        elif model.startswith("github_copilot/"):
+            # GitHub Copilot models use special headers
+            return LiteLLMModel(
+                model=model,
+                generation_kwargs={
+                    "extra_headers": {
+                        "Editor-Version": "vscode/1.85.0",
+                        "Editor-Plugin-Version": "copilot-chat/0.11.1",
+                        "Openai-Organization": "github-copilot",
+                        "Copilot-Integration-Id": "vscode-chat"
+                    }
+                }
+            ), True
+    
     if should_use_openai_model():
         return GPTModel(), True
     if should_use_gemini_model():

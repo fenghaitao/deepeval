@@ -505,14 +505,23 @@ class MIPROV2(BaseAlgorithm):
                 self._best_trial_score = score
                 self._best_trial_key = combo_key
 
-            # Record trial
+            # Record trial in AcceptedIteration format
             trial_num = len(self._trial_history) + 1
+            config_id_str = f"trial_{trial_num}_instr_{instr_idx}_demo_{demo_idx}"
+            
+            # Parent is the previous trial (if any)
+            if trial_num > 1:
+                parent_id_str = f"trial_{trial_num-1}"
+            else:
+                parent_id_str = config_id_str  # First trial is its own parent
+            
             self._trial_history.append(
                 {
-                    "trial": trial_num,
-                    "instr_idx": instr_idx,
-                    "demo_idx": demo_idx,
-                    "score": score,
+                    "parent": parent_id_str,
+                    "child": config_id_str,
+                    "module": self.SINGLE_MODULE_ID,  # MIPROV2 uses single module
+                    "before": self._best_trial_score if trial_num > 1 else 0.0,  # Previous best score
+                    "after": score,  # Current score
                 }
             )
 
@@ -594,13 +603,22 @@ class MIPROV2(BaseAlgorithm):
                 self._best_trial_score = score
                 self._best_trial_key = combo_key
 
-            # Record trial
+            # Record trial in AcceptedIteration format
+            config_id_str = f"trial_{trial_num}_instr_{instr_idx}_demo_{demo_idx}"
+            
+            # Parent is the previous trial (if any)
+            if trial_num > 1:
+                parent_id_str = f"trial_{trial_num-1}"
+            else:
+                parent_id_str = config_id_str  # First trial is its own parent
+            
             self._trial_history.append(
                 {
-                    "trial": trial_num,
-                    "instr_idx": instr_idx,
-                    "demo_idx": demo_idx,
-                    "score": score,
+                    "parent": parent_id_str,
+                    "child": config_id_str,
+                    "module": self.SINGLE_MODULE_ID,  # MIPROV2 uses single module
+                    "before": self._best_trial_score if trial_num > 1 else 0.0,  # Previous best score
+                    "after": score,  # Current score
                 }
             )
 

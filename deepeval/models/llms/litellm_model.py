@@ -141,6 +141,11 @@ class LiteLLMModel(DeepEvalBaseLLM):
     ) -> Tuple[Union[str, BaseModel], float]:
 
         from litellm import completion
+        import litellm as litellm_module
+        
+        # Disable message logging to avoid pickle issues with thread locks
+        litellm_module.turn_off_message_logging = True
+        litellm_module.disable_streaming_logging = True
 
         if check_if_multimodal(prompt):
             prompt = convert_to_multi_modal_array(input=prompt)
@@ -203,6 +208,11 @@ class LiteLLMModel(DeepEvalBaseLLM):
     ) -> Tuple[Union[str, BaseModel], float]:
 
         from litellm import acompletion
+        import litellm as litellm_module
+        
+        # Disable message logging to avoid pickle issues with thread locks
+        litellm_module.turn_off_message_logging = True
+        litellm_module.disable_streaming_logging = True
 
         if check_if_multimodal(prompt):
             prompt = convert_to_multi_modal_array(input=prompt)
