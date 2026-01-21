@@ -339,11 +339,16 @@ def print_test_result(test_result: TestResult, display: TestRunResultDisplay):
 
     else:
         print("For test case:\n")
-        print(f"  - input: {test_result.input}")
-        print(f"  - actual output: {test_result.actual_output}")
-        print(f"  - expected output: {test_result.expected_output}")
-        print(f"  - context: {test_result.context}")
-        print(f"  - retrieval context: {test_result.retrieval_context}")
+        input_str = str(test_result.input)[:80] + "..." if test_result.input and len(str(test_result.input)) > 80 else test_result.input
+        actual_output_str = str(test_result.actual_output)[:80] + "..." if test_result.actual_output and len(str(test_result.actual_output)) > 80 else test_result.actual_output
+        expected_output_str = str(test_result.expected_output)[:80] + "..." if test_result.expected_output and len(str(test_result.expected_output)) > 80 else test_result.expected_output
+        context_str = str(test_result.context)[:80] + "..." if test_result.context and len(str(test_result.context)) > 80 else test_result.context
+        retrieval_context_str = str(test_result.retrieval_context)[:80] + "..." if test_result.retrieval_context and len(str(test_result.retrieval_context)) > 80 else test_result.retrieval_context
+        print(f"  - input: {input_str}")
+        print(f"  - actual output: {actual_output_str}")
+        print(f"  - expected output: {expected_output_str}")
+        print(f"  - context: {context_str}")
+        print(f"  - retrieval context: {retrieval_context_str}")
 
 
 def write_test_result_to_file(
@@ -434,12 +439,17 @@ def write_test_result_to_file(
                 file.write("  - No turns recorded in this test case.\n")
         else:
             file.write("For test case:\n\n")
-            file.write(f"  - input: {test_result.input}\n")
-            file.write(f"  - actual output: {test_result.actual_output}\n")
-            file.write(f"  - expected output: {test_result.expected_output}\n")
-            file.write(f"  - context: {test_result.context}\n")
+            input_str = str(test_result.input)[:80] + "..." if test_result.input and len(str(test_result.input)) > 80 else test_result.input
+            actual_output_str = str(test_result.actual_output)[:80] + "..." if test_result.actual_output and len(str(test_result.actual_output)) > 80 else test_result.actual_output
+            expected_output_str = str(test_result.expected_output)[:80] + "..." if test_result.expected_output and len(str(test_result.expected_output)) > 80 else test_result.expected_output
+            context_str = str(test_result.context)[:80] + "..." if test_result.context and len(str(test_result.context)) > 80 else test_result.context
+            retrieval_context_str = str(test_result.retrieval_context)[:80] + "..." if test_result.retrieval_context and len(str(test_result.retrieval_context)) > 80 else test_result.retrieval_context
+            file.write(f"  - input: {input_str}\n")
+            file.write(f"  - actual output: {actual_output_str}\n")
+            file.write(f"  - expected output: {expected_output_str}\n")
+            file.write(f"  - context: {context_str}\n")
             file.write(
-                f"  - retrieval context: {test_result.retrieval_context}\n"
+                f"  - retrieval context: {retrieval_context_str}\n"
             )
 
     aggregate_metric_pass_rates_to_file(
