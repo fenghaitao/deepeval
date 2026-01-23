@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import os
 import random
 import time
 import uuid
@@ -92,6 +93,36 @@ class COPRO(BaseAlgorithm):
     def print_log(msg: str) -> None:
         """Print a log message with COPRO prefix."""
         print(f"<COPRO> {msg}")
+
+    @staticmethod
+    def _wait_for_checkpoint(checkpoint_name: str) -> None:
+        """
+        Wait for user confirmation at a checkpoint if ENABLE_CHKP=1.
+        
+        Parameters
+        ----------
+        checkpoint_name : str
+            Name of the checkpoint for display purposes
+        """
+        if os.environ.get("ENABLE_CHKP", "0") == "1":
+            print("\n" + "="*80)
+            print(f"🛑 CHECKPOINT: {checkpoint_name}")
+            print("="*80)
+            print("Please review the above output and verify the results.")
+            print("Type 'y' and press Enter to continue, or Ctrl+C to abort: ", end="", flush=True)
+            
+            while True:
+                try:
+                    user_input = input().strip().lower()
+                    if user_input == 'y':
+                        print("✅ Checkpoint confirmed, continuing...")
+                        print("="*80 + "\n")
+                        break
+                    else:
+                        print("Please type 'y' to continue: ", end="", flush=True)
+                except KeyboardInterrupt:
+                    print("\n❌ Checkpoint aborted by user")
+                    raise
 
     def _save_prompt_to_file(
         self,
@@ -272,6 +303,10 @@ class COPRO(BaseAlgorithm):
                 )
                 self.print_log(f"⭐ Root prompt minibatch score: {root_score:.4f}")
                 self.print_log("="*80 + "\n")
+                
+                # Checkpoint after root scoring
+                self._wait_for_checkpoint(f"Root Prompt Scoring (score={root_score:.4f})")
+                
                 self._record_minibatch_score(
                     root_prompt_configuration.id, root_score
                 )
@@ -311,6 +346,9 @@ class COPRO(BaseAlgorithm):
             self.print_log("─"*80)
             self.print_log(feedback_text)
             self.print_log("─"*80)
+            
+            # Checkpoint after feedback generation
+            self._wait_for_checkpoint(f"Iteration {self.trial_index + 1} - Minibatch Feedback Generated")
 
             before_mean = self._mean_minibatch_score(
                 parent_prompt_configuration.id
@@ -358,6 +396,12 @@ class COPRO(BaseAlgorithm):
                 )
                 self.print_log(f"⭐ Child minibatch score: {child_score:.4f}")
                 self.print_log(f"📈 Comparison: Parent={before_mean:.4f} vs Child={child_score:.4f} (delta={child_score - before_mean:+.4f})")
+                
+                # Checkpoint after child scoring
+                self._wait_for_checkpoint(
+                    f"Iteration {self.trial_index + 1}, Proposal {proposal_idx + 1}/{num_proposals} - "
+                    f"Child Scoring (score={child_score:.4f})"
+                )
 
                 # 3. Evaluate & decide whether to accept the child.
                 if child_score >= before_mean + min_delta:
