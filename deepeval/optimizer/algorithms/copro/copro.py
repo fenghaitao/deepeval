@@ -19,6 +19,7 @@ from __future__ import annotations
 import random
 import time
 import uuid
+from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Awaitable,
@@ -86,6 +87,64 @@ class COPRO(BaseAlgorithm):
 
     name = "COPRO"
     SINGLE_MODULE_ID: ModuleId = "__module__"
+
+    @staticmethod
+    def print_log(msg: str) -> None:
+        """Print a log message with COPRO prefix."""
+        print(f"<COPRO> {msg}")
+
+    def _save_prompt_to_file(
+        self,
+        prompt: Prompt,
+        label: str,
+        prompt_id: str,
+    ) -> str:
+        """
+        Save prompt content to a file and return the file path.
+        
+        Parameters
+        ----------
+        prompt : Prompt
+            The prompt to save
+        label : str
+            A label for the prompt (e.g., 'root', 'parent', 'child')
+        prompt_id : str
+            The prompt configuration ID
+            
+        Returns
+        -------
+        str
+            The path to the saved file
+        """
+        # Create output directory
+        output_dir = Path("copro_prompts") / self.optimization_id
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate filename with timestamp and iteration info
+        iteration_info = f"iter{self.trial_index:03d}" if hasattr(self, 'trial_index') else "init"
+        filename = f"{iteration_info}_{label}_{prompt_id[:8]}.txt"
+        filepath = output_dir / filename
+        
+        # Get prompt content
+        if prompt.type == PromptType.LIST:
+            content = "\n".join([
+                f"[{msg.role}]: {msg.content}"
+                for msg in prompt.messages_template
+            ])
+        else:
+            content = prompt.text_template or ""
+        
+        # Write to file
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(f"Optimization ID: {self.optimization_id}\n")
+            f.write(f"Prompt ID: {prompt_id}\n")
+            f.write(f"Label: {label}\n")
+            f.write(f"Iteration: {iteration_info}\n")
+            f.write(f"Prompt Type: {prompt.type}\n")
+            f.write("="*80 + "\n")
+            f.write(content)
+        
+        return str(filepath)
 
     def __init__(
         self,
@@ -188,37 +247,70 @@ class COPRO(BaseAlgorithm):
 
             if not goldens:
                 return False
-            print("=== goldens inputs:", [g.input for g in goldens])
 
             # Lazily seed with a minibatch score for the root
             # candidate on the first iteration.
             if not self._minibatch_score_counts:
                 seed_minibatch = self._draw_minibatch(goldens)
-                print("=== seed minibatch inputs:", [g.input for g in seed_minibatch])
+                self.print_log("\n" + "="*80)
+                self.print_log(f"🌱 INITIALIZING ROOT PROMPT (ID: {root_prompt_configuration.id[:8]}...)")
+                self.print_log("="*80)
+                
+                # Save root prompt to file
+                root_prompt = root_prompt_configuration.prompts[self.SINGLE_MODULE_ID]
+                root_prompt_file = self._save_prompt_to_file(
+                    root_prompt, 
+                    "root", 
+                    root_prompt_configuration.id
+                )
+                self.print_log(f"📝 Root prompt saved to: {root_prompt_file}")
+                
+                self.print_log(f"\n📊 Seed minibatch size: {len(seed_minibatch)}")
+                self.print_log(f"📋 Seed minibatch inputs: {[g.input for g in seed_minibatch]}")
                 root_score = self.scorer.score_minibatch(
                     root_prompt_configuration, seed_minibatch
                 )
-                print("=== score_minibatch on seed minibatch")
+                self.print_log(f"⭐ Root prompt minibatch score: {root_score:.4f}")
+                self.print_log("="*80 + "\n")
                 self._record_minibatch_score(
                     root_prompt_configuration.id, root_score
                 )
 
             # 1. Choose which candidate prompt to mutate.
+            self.print_log("\n" + "="*80)
+            self.print_log(f"🔄 ITERATION {self.trial_index + 1}/{self.iterations}")
+            self.print_log("="*80)
+            
             parent_prompt_configuration = self._select_candidate()
             selected_module_id: ModuleId = self.SINGLE_MODULE_ID
 
+            parent_mean_score = self._mean_minibatch_score(parent_prompt_configuration.id)
+            self.print_log(f"👤 Selected parent (ID: {parent_prompt_configuration.id[:8]}...)")
+            self.print_log(f"   Mean minibatch score: {parent_mean_score:.4f}")
+            
+            # Save parent prompt to file
+            parent_prompt = parent_prompt_configuration.prompts[selected_module_id]
+            parent_prompt_file = self._save_prompt_to_file(
+                parent_prompt,
+                "parent",
+                parent_prompt_configuration.id
+            )
+            self.print_log(f"📝 Parent prompt saved to: {parent_prompt_file}")
+            
             minibatch = self._draw_minibatch(goldens)
-            print("=== Draw minibatch of size", len(minibatch))
-            print("Selected parent prompt configuration ID:", parent_prompt_configuration.id)
-            print("Selected module ID:", selected_module_id)
-            print("Minibatch goldens inputs:", [g.input for g in minibatch])
+            self.print_log(f"\n📊 Drew minibatch of size {len(minibatch)}")
+            self.print_log(f"📋 Minibatch inputs: {[g.input for g in minibatch]}")
 
             # Compute shared feedback for this parent/minibatch that will be
             # used by all cooperative child proposals.
+            self.print_log(f"\n🔍 Computing feedback for parent on minibatch...")
             feedback_text = self.scorer.get_minibatch_feedback(
                 parent_prompt_configuration, selected_module_id, minibatch
             )
-            print("=== Minibatch feedback text:", feedback_text)
+            self.print_log(f"💬 Minibatch feedback received (length: {len(feedback_text)} chars):")
+            self.print_log("─"*80)
+            self.print_log(feedback_text)
+            self.print_log("─"*80)
 
             before_mean = self._mean_minibatch_score(
                 parent_prompt_configuration.id
@@ -226,16 +318,23 @@ class COPRO(BaseAlgorithm):
             jitter = 1e-6
             min_delta = max(MIPROV2_MIN_DELTA, jitter)
 
+            self.print_log(f"\n🎯 Generating {self.proposals_per_step} cooperative child proposals...")
+            self.print_log(f"   Acceptance threshold: parent_score + {min_delta:.6f} = {before_mean + min_delta:.4f}")
+            
             # 2. Generate multiple cooperative child prompts and evaluate them.
             num_proposals = int(self.proposals_per_step)
-            for _ in range(num_proposals):
+            for proposal_idx in range(num_proposals):
+                self.print_log(f"\n" + "─"*80)
+                self.print_log(f"👶 CHILD PROPOSAL {proposal_idx + 1}/{num_proposals}")
+                self.print_log("─"*80)
+                
                 child_prompt = self._generate_child_prompt(
                     selected_module_id,
                     parent_prompt_configuration,
                     feedback_text,
                 )
                 if child_prompt is None:
-                    # No child, nothing more to do this iteration
+                    self.print_log("❌ Child generation failed or produced identical prompt - skipping")
                     continue
 
                 child_prompt_configuration = self._make_child(
@@ -243,15 +342,26 @@ class COPRO(BaseAlgorithm):
                     parent_prompt_configuration,
                     child_prompt,
                 )
-                print("Generated child prompt:", child_prompt_configuration.id)
+                self.print_log(f"✨ Generated child prompt (ID: {child_prompt_configuration.id[:8]}...)")
+                
+                # Save child prompt to file
+                child_prompt_file = self._save_prompt_to_file(
+                    child_prompt,
+                    f"child_proposal{proposal_idx + 1}",
+                    child_prompt_configuration.id
+                )
+                self.print_log(f"📝 Child prompt saved to: {child_prompt_file}")
 
+                self.print_log(f"\n📊 Scoring child on minibatch...")
                 child_score = self.scorer.score_minibatch(
                     child_prompt_configuration, minibatch
                 )
-                print("=== Child prompt minibatch score:", child_score)
+                self.print_log(f"⭐ Child minibatch score: {child_score:.4f}")
+                self.print_log(f"📈 Comparison: Parent={before_mean:.4f} vs Child={child_score:.4f} (delta={child_score - before_mean:+.4f})")
 
                 # 3. Evaluate & decide whether to accept the child.
                 if child_score >= before_mean + min_delta:
+                    self.print_log(f"✅ ACCEPTED! Child score exceeds threshold ({child_score:.4f} >= {before_mean + min_delta:.4f})")
                     # Accept: add to pool, update surrogate stats, and record iteration.
                     self._add_prompt_configuration(child_prompt_configuration)
                     self._record_minibatch_score(
@@ -267,6 +377,9 @@ class COPRO(BaseAlgorithm):
                             after=child_score,
                         )
                     )
+                    self.print_log(f"📦 Added to candidate pool (current size: {len(self.prompt_configurations_by_id)})")
+                else:
+                    self.print_log(f"❌ REJECTED! Child score below threshold ({child_score:.4f} < {before_mean + min_delta:.4f})")
                 # else: reject; do not add child to the candidate pool.
 
             self.trial_index += 1
@@ -274,17 +387,43 @@ class COPRO(BaseAlgorithm):
                 self.full_eval_every is not None
                 and self.trial_index % self.full_eval_every == 0
             ):
+                self.print_log(f"\n🔍 Full evaluation checkpoint (iteration {self.trial_index})")
                 self._full_evaluate_best(goldens)
 
+            self.print_log(f"\n" + "="*80)
+            self.print_log(f"✨ ITERATION {self.trial_index} COMPLETE")
+            self.print_log("="*80 + "\n")
+            
             return True
 
         self._run_loop_iteration(_one_iteration)
 
         # Ensure at least one candidate has been fully evaluated.
         if not self.pareto_score_table:
+            self.print_log("\n🔍 Final full evaluation of best candidate...")
             self._full_evaluate_best(goldens)
 
         best = self._best_by_aggregate()
+        self.print_log("\n" + "="*80)
+        self.print_log("🏆 OPTIMIZATION COMPLETE - BEST PROMPT SELECTED")
+        self.print_log("="*80)
+        self.print_log(f"🎯 Best prompt ID: {best.id[:8]}...")
+        self.print_log(f"⭐ Best aggregate score: {self.aggregate_instances(self.pareto_score_table[best.id]):.4f}")
+        
+        # Save best prompt to file
+        best_prompt = best.prompts[self.SINGLE_MODULE_ID]
+        best_prompt_file = self._save_prompt_to_file(
+            best_prompt,
+            "best_final",
+            best.id
+        )
+        self.print_log(f"📝 Best prompt saved to: {best_prompt_file}")
+        
+        # Print summary of prompt files location
+        output_dir = Path("copro_prompts") / self.optimization_id
+        self.print_log(f"📂 All prompts saved in directory: {output_dir}")
+        self.print_log("="*80 + "\n")
+        
         prompt_config_snapshots = build_prompt_config_snapshots(
             self.prompt_configurations_by_id
         )
@@ -506,6 +645,7 @@ class COPRO(BaseAlgorithm):
 
         # If we exceed the population size, iteratively prune the worst
         # (by mean minibatch score), never removing the current best.
+        pruned_count = 0
         while len(self.prompt_configurations_by_id) > self.population_size:
             best_id: Optional[PromptConfigurationId] = None
             best_score = float("-inf")
@@ -529,11 +669,16 @@ class COPRO(BaseAlgorithm):
                 break
 
             # Prune the chosen worst candidate from all bookkeeping tables.
+            self.print_log(f"   🗑️  Pruning worst candidate (ID: {worst_id[:8]}..., score: {worst_score:.4f}) to maintain population size")
             self.prompt_configurations_by_id.pop(worst_id, None)
             self.parents_by_id.pop(worst_id, None)
             self._minibatch_score_sums.pop(worst_id, None)
             self._minibatch_score_counts.pop(worst_id, None)
             self.pareto_score_table.pop(worst_id, None)
+            pruned_count += 1
+        
+        if pruned_count > 0:
+            self.print_log(f"   📊 Pruned {pruned_count} candidate(s), pool size now: {len(self.prompt_configurations_by_id)}")
 
     def _record_minibatch_score(
         self,
@@ -632,10 +777,20 @@ class COPRO(BaseAlgorithm):
             )
 
         eps = float(self.exploration_probability)
+        
+        # Print current pool status
+        self.print_log(f"\n🎲 Candidate Selection (epsilon={eps:.2f})")
+        self.print_log(f"📦 Current pool size: {len(candidate_ids)}")
+        for idx, cand_id in enumerate(candidate_ids, 1):
+            score = self._mean_minibatch_score(cand_id)
+            self.print_log(f"   {idx}. ID: {cand_id[:8]}... | Mean Score: {score:.4f}")
+        
         if eps > 0.0 and self.random_state.random() < eps:
             chosen_id = self.random_state.choice(candidate_ids)
+            self.print_log(f"🎯 Selection strategy: EXPLORATION (random)")
         else:
             chosen_id = self._best_by_minibatch().id
+            self.print_log(f"🎯 Selection strategy: EXPLOITATION (best score)")
 
         return self.prompt_configurations_by_id[chosen_id]
 
@@ -678,10 +833,14 @@ class COPRO(BaseAlgorithm):
 
         best = self._best_by_minibatch()
         if best.id in self.pareto_score_table:
+            self.print_log(f"   ℹ️  Best candidate (ID: {best.id[:8]}...) already has full evaluation")
             return
 
+        self.print_log(f"   📊 Evaluating best candidate (ID: {best.id[:8]}...) on full dataset ({len(goldens)} goldens)...")
         scores = self.scorer.score_pareto(best, goldens)
         self.pareto_score_table[best.id] = scores
+        aggregate_score = self.aggregate_instances(scores)
+        self.print_log(f"   ⭐ Full evaluation aggregate score: {aggregate_score:.4f}")
 
     async def _a_generate_child_prompt(
         self,
@@ -727,17 +886,21 @@ class COPRO(BaseAlgorithm):
                 "current prompt configuration."
             ) from exc
 
+        self.print_log(f"🔄 Rewriting prompt using feedback...")
         new_prompt = self._rewriter.rewrite(
             module_id=selected_module_id,
             old_prompt=old_prompt,
             feedback_text=feedback_text,
         )
 
-        if old_prompt.type != new_prompt.type or self._prompts_equivalent(
-            old_prompt, new_prompt
-        ):
-            # Don't accept if new prompt is the same as parent, or if type changed.
+        if old_prompt.type != new_prompt.type:
+            self.print_log(f"⚠️  Prompt type changed from {old_prompt.type} to {new_prompt.type} - rejecting")
             return None
+            
+        if self._prompts_equivalent(old_prompt, new_prompt):
+            self.print_log(f"⚠️  New prompt is identical to parent - rejecting")
+            return None
+            
         return new_prompt
 
     def _make_child(
