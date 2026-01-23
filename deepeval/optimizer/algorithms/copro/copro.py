@@ -188,14 +188,17 @@ class COPRO(BaseAlgorithm):
 
             if not goldens:
                 return False
+            print("=== goldens inputs:", [g.input for g in goldens])
 
             # Lazily seed with a minibatch score for the root
             # candidate on the first iteration.
             if not self._minibatch_score_counts:
                 seed_minibatch = self._draw_minibatch(goldens)
+                print("=== seed minibatch inputs:", [g.input for g in seed_minibatch])
                 root_score = self.scorer.score_minibatch(
                     root_prompt_configuration, seed_minibatch
                 )
+                print("=== score_minibatch on seed minibatch")
                 self._record_minibatch_score(
                     root_prompt_configuration.id, root_score
                 )
@@ -205,12 +208,17 @@ class COPRO(BaseAlgorithm):
             selected_module_id: ModuleId = self.SINGLE_MODULE_ID
 
             minibatch = self._draw_minibatch(goldens)
+            print("=== Draw minibatch of size", len(minibatch))
+            print("Selected parent prompt configuration ID:", parent_prompt_configuration.id)
+            print("Selected module ID:", selected_module_id)
+            print("Minibatch goldens inputs:", [g.input for g in minibatch])
 
             # Compute shared feedback for this parent/minibatch that will be
             # used by all cooperative child proposals.
             feedback_text = self.scorer.get_minibatch_feedback(
                 parent_prompt_configuration, selected_module_id, minibatch
             )
+            print("=== Minibatch feedback text:", feedback_text)
 
             before_mean = self._mean_minibatch_score(
                 parent_prompt_configuration.id
@@ -235,10 +243,12 @@ class COPRO(BaseAlgorithm):
                     parent_prompt_configuration,
                     child_prompt,
                 )
+                print("Generated child prompt:", child_prompt_configuration.id)
 
                 child_score = self.scorer.score_minibatch(
                     child_prompt_configuration, minibatch
                 )
+                print("=== Child prompt minibatch score:", child_score)
 
                 # 3. Evaluate & decide whether to accept the child.
                 if child_score >= before_mean + min_delta:
