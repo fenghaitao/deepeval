@@ -109,17 +109,16 @@ class COPRO(BaseAlgorithm):
             print(f"🛑 CHECKPOINT: {checkpoint_name}")
             print("="*80)
             print("Please review the above output and verify the results.")
-            print("Type 'y' and press Enter to continue, or Ctrl+C to abort: ", end="", flush=True)
             
             while True:
                 try:
-                    user_input = input().strip().lower()
+                    user_input = input("Type 'y' and press Enter to continue, or Ctrl+C to abort: ").strip().lower()
                     if user_input == 'y':
                         print("✅ Checkpoint confirmed, continuing...")
                         print("="*80 + "\n")
                         break
                     else:
-                        print("Please type 'y' to continue: ", end="", flush=True)
+                        print(f"⚠️  Invalid input: '{user_input}'")
                 except KeyboardInterrupt:
                     print("\n❌ Checkpoint aborted by user")
                     raise
